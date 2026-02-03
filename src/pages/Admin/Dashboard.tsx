@@ -4,6 +4,7 @@ import autoTable from 'jspdf-autotable';
 import { useAuth } from '../../context/AuthContext';
 import { useAgendamentos } from '../../hooks/useAgendamentos';
 import { useConfig } from '../../hooks/useConfig';
+import { AdminCalendar } from '../../components/Admin/AdminCalendar';
 import { 
   Calendar as CalendarIcon, 
   Clock, 
@@ -628,79 +629,17 @@ export const Dashboard: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Regras por Data */}
-                  <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="p-3 bg-teal-100 rounded-xl text-teal-600">
-                        <CalendarCheck className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-bold text-slate-800">Regras por Data</h3>
-                        <p className="text-sm text-slate-400">Atribua categorias a datas específicas</p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-3 mb-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                      <input
-                        type="date"
-                        value={novaRegraData.data}
-                        onChange={(e) => setNovaRegraData({...novaRegraData, data: e.target.value})}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2 text-slate-700 outline-none"
-                      />
-                      <div className="flex gap-3">
-                        <select
-                          value={novaRegraData.categoriaId}
-                          onChange={(e) => setNovaRegraData({...novaRegraData, categoriaId: e.target.value})}
-                          className="flex-1 bg-white border border-slate-200 rounded-lg px-4 py-2 text-slate-700 outline-none"
-                        >
-                          <option value="">Selecione uma Categoria...</option>
-                          {config.categorias?.map(cat => (
-                            <option key={cat.id} value={cat.id}>{cat.nome}</option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={() => {
-                            if (novaRegraData.data && novaRegraData.categoriaId) {
-                              salvarRegraData(novaRegraData.data, {
-                                categoriaId: novaRegraData.categoriaId
-                              });
-                              setNovaRegraData({ data: '', categoriaId: '' });
-                            }
-                          }}
-                          className="bg-teal-500 text-white px-4 py-2 rounded-lg hover:bg-teal-600 transition-all"
-                        >
-                          <Plus className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
-                      {Object.entries(config.regrasDatas || {}).map(([data, regra]) => {
-                        const cat = config.categorias?.find(c => c.id === regra.categoriaId);
-                        return (
-                          <div key={data} className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-xl">
-                            <div>
-                              <p className="font-bold text-slate-700">
-                                {new Date(data + 'T12:00:00').toLocaleDateString('pt-BR')}
-                              </p>
-                              <p className="text-xs text-teal-600 font-medium">
-                                {cat ? cat.nome : 'Categoria Removida'}
-                              </p>
-                            </div>
-                            <button
-                              onClick={() => removerRegraData(data)}
-                              className="text-slate-400 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        );
-                      })}
-                      {(!config.regrasDatas || Object.keys(config.regrasDatas).length === 0) && (
-                        <p className="text-sm text-slate-400 text-center py-4">Nenhuma regra cadastrada</p>
-                      )}
-                    </div>
-                  </div>
+                  {/* Regras por Data - Substituído pelo Calendário Visual */}
+                  <AdminCalendar
+                    config={config}
+                    onToggleDate={(data, categoriaId) => {
+                      if (config.regrasDatas && config.regrasDatas[data]) {
+                        removerRegraData(data);
+                      } else {
+                        salvarRegraData(data, { categoriaId });
+                      }
+                    }}
+                  />
                 </div>
               </div>
             </div>
