@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { CONFIG } from '../config/config';
+import { db } from '../services/firebase';
+import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 
 export interface Categoria {
   id: string;
@@ -22,7 +24,8 @@ export interface SistemaConfig {
   capacidadePorHorario?: Record<string, number>;
 }
 
-const STORAGE_KEY = 'config_sistema_rg';
+const CONFIG_COLLECTION = 'configuracoes';
+const CONFIG_DOC_ID = 'geral';
 
 export const useConfig = () => {
   const [config, setConfig] = useState<SistemaConfig>({
@@ -35,32 +38,35 @@ export const useConfig = () => {
   });
 
   useEffect(() => {
-    carregarConfiguracoes();
+    // Escutar atualizações em tempo real do Firebase
+    const unsubscribe = onSnapshot(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data() as SistemaConfig;
+        setConfig({
+          horariosAtendimento: data.horariosAtendimento || [...CONFIG.HORARIOS_ATENDIMENTO],
+          feriados: data.feriados || [...CONFIG.FERIADOS],
+          limiteVagasPorDia: data.limiteVagasPorDia || CONFIG.LIMITE_VAGAS_POR_DIA,
+          categorias: data.categorias || [],
+          regrasDatas: data.regrasDatas || {},
+          capacidadePorHorario: data.capacidadePorHorario || {}
+        });
+      } else {
+        // Se não existir, cria o documento inicial
+        salvarConfiguracoes(config);
+      }
+    }, (error) => {
+      console.error("Erro ao sincronizar configurações:", error);
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const carregarConfiguracoes = () => {
+  const salvarConfiguracoes = async (novaConfig: SistemaConfig) => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setConfig({
-          horariosAtendimento: parsed.horariosAtendimento || [...CONFIG.HORARIOS_ATENDIMENTO],
-          feriados: parsed.feriados || [...CONFIG.FERIADOS],
-          limiteVagasPorDia: parsed.limiteVagasPorDia || CONFIG.LIMITE_VAGAS_POR_DIA,
-          categorias: parsed.categorias || [],
-          regrasDatas: parsed.regrasDatas || {},
-          capacidadePorHorario: parsed.capacidadePorHorario || {}
-        });
-      }
-    } catch (error) {
-      console.error('Erro ao carregar configurações:', error);
-    }
-  };
-
-  const salvarConfiguracoes = (novaConfig: SistemaConfig) => {
-    try {
+      // Atualiza localmente para feedback instantâneo
       setConfig(novaConfig);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(novaConfig));
+      // Salva no Firebase
+      await setDoc(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), novaConfig);
       return true;
     } catch (error) {
       console.error('Erro ao salvar configurações:', error);
@@ -103,32 +109,29 @@ export const useConfig = () => {
     salvarConfiguracoes({ ...config, limiteVagasPorDia: limite });
   };
 
-  const atualizarCapacidadeHorario = (horario: string, capacidade: number) => {
-    const novasCapacidades = { ...(config.capacidadePorHorario || {}) };
-    novasCapacidades[horario] = Math.max(0, Math.floor(capacidade));
-    salvarConfiguracoes({ ...config, capacidadePorHorario: novasCapacidades });
-  };
-
   const salvarCategoria = (categoria: Categoria) => {
     const novasCategorias = [...config.categorias];
     const index = novasCategorias.findIndex(c => c.id === categoria.id);
+    
     if (index >= 0) {
       novasCategorias[index] = categoria;
     } else {
       novasCategorias.push(categoria);
     }
+    
     salvarConfiguracoes({ ...config, categorias: novasCategorias });
   };
 
   const removerCategoria = (id: string) => {
     const novasCategorias = config.categorias.filter(c => c.id !== id);
-    // Remove rules associated with this category
+    // Remove também regras associadas a esta categoria
     const novasRegras = { ...config.regrasDatas };
     Object.keys(novasRegras).forEach(data => {
       if (novasRegras[data].categoriaId === id) {
         delete novasRegras[data];
       }
     });
+    
     salvarConfiguracoes({ ...config, categorias: novasCategorias, regrasDatas: novasRegras });
   };
 
@@ -143,6 +146,12 @@ export const useConfig = () => {
     salvarConfiguracoes({ ...config, regrasDatas: novasRegras });
   };
 
+  const atualizarCapacidadeHorario = (horario: string, capacidade: number) => {
+    const novasCapacidades = { ...(config.capacidadePorHorario || {}) };
+    novasCapacidades[horario] = Math.max(0, Math.floor(capacidade));
+    salvarConfiguracoes({ ...config, capacidadePorHorario: novasCapacidades });
+  };
+
   return {
     config,
     adicionarHorario,
@@ -150,10 +159,10 @@ export const useConfig = () => {
     adicionarFeriado,
     removerFeriado,
     atualizarLimiteVagas,
-    atualizarCapacidadeHorario,
     salvarCategoria,
     removerCategoria,
     salvarRegraData,
-    removerRegraData
+    removerRegraData,
+    atualizarCapacidadeHorario
   };
 };

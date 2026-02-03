@@ -1,44 +1,93 @@
 import { useState, useEffect } from 'react';
-import type { Agendamento, LocalStorageData } from '../types';
+import type { Agendamento } from '../types';
 import { CONFIG } from '../config/config';
+import { db } from '../services/firebase';
+import { 
+  collection, 
+  addDoc, 
+  updateDoc, 
+  doc, 
+  onSnapshot, 
+  query, 
+  orderBy, 
+  runTransaction,
+  setDoc,
+  getDoc
+} from 'firebase/firestore';
+
+const AGENDAMENTOS_COLLECTION = 'agendamentos';
+const COUNTERS_COLLECTION = 'counters';
+const COUNTER_DOC_ID = 'geral';
 
 export const useAgendamentos = () => {
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
   const [senhaAtual, setSenhaAtual] = useState<number>(1);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    carregarDados();
+    // Escutar agendamentos em tempo real
+    const q = query(collection(db, AGENDAMENTOS_COLLECTION), orderBy('dataAgendamento'), orderBy('horario'));
+    const unsubscribeAgendamentos = onSnapshot(q, (snapshot) => {
+      const dados = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      })) as Agendamento[];
+      setAgendamentos(dados);
+      setLoading(false);
+    }, (error) => {
+      console.error("Erro ao carregar agendamentos:", error);
+      setLoading(false);
+    });
+
+    // Escutar contador de senhas
+    const unsubscribeCounter = onSnapshot(doc(db, COUNTERS_COLLECTION, COUNTER_DOC_ID), (docSnap) => {
+      if (docSnap.exists()) {
+        setSenhaAtual(docSnap.data().senhaAtual);
+      } else {
+        // Inicializa contador se não existir
+        setDoc(doc(db, COUNTERS_COLLECTION, COUNTER_DOC_ID), { senhaAtual: 1 });
+        setSenhaAtual(1);
+      }
+    });
+
+    return () => {
+      unsubscribeAgendamentos();
+      unsubscribeCounter();
+    };
   }, []);
 
-  const carregarDados = () => {
+  const salvarAgendamento = async (agendamento: Agendamento) => {
     try {
-      const dadosArmazenados = localStorage.getItem(CONFIG.STORAGE_KEYS.AGENDAMENTOS);
-      const senhaArmazenada = localStorage.getItem(CONFIG.STORAGE_KEYS.SENHA_ATUAL);
-      
-      if (dadosArmazenados) {
-        const dados: Agendamento[] = JSON.parse(dadosArmazenados);
-        setAgendamentos(dados);
-      }
-      
-      if (senhaArmazenada) {
-        setSenhaAtual(parseInt(senhaArmazenada));
-      }
-    } catch (error) {
-      console.error('Erro ao carregar dados:', error);
-    }
-  };
+      let agendamentoSalvo: Agendamento | null = null;
 
-  const salvarAgendamento = (agendamento: Agendamento) => {
-    try {
-      const novosAgendamentos = [...agendamentos, agendamento];
-      setAgendamentos(novosAgendamentos);
-      localStorage.setItem(CONFIG.STORAGE_KEYS.AGENDAMENTOS, JSON.stringify(novosAgendamentos));
-      
-      const novaSenha = senhaAtual >= CONFIG.SENHA_MAXIMA ? 1 : senhaAtual + 1;
-      setSenhaAtual(novaSenha);
-      localStorage.setItem(CONFIG.STORAGE_KEYS.SENHA_ATUAL, novaSenha.toString());
-      
-      return agendamento;
+      await runTransaction(db, async (transaction) => {
+        // 1. Obter a senha atual mais recente
+        const counterRef = doc(db, COUNTERS_COLLECTION, COUNTER_DOC_ID);
+        const counterDoc = await transaction.get(counterRef);
+        
+        let novaSenha = 1;
+        if (counterDoc.exists()) {
+          const current = counterDoc.data().senhaAtual;
+          novaSenha = current >= CONFIG.SENHA_MAXIMA ? 1 : current + 1;
+        }
+
+        // 2. Preparar o novo agendamento com a senha correta
+        const novoAgendamento = {
+          ...agendamento,
+          senha: novaSenha
+        };
+
+        // 3. Criar referência para o novo documento
+        const newAgendamentoRef = doc(collection(db, AGENDAMENTOS_COLLECTION));
+        
+        // 4. Executar as escritas (novo agendamento e atualização da senha)
+        transaction.set(newAgendamentoRef, novoAgendamento);
+        transaction.set(counterRef, { senhaAtual: novaSenha });
+
+        agendamentoSalvo = { ...novoAgendamento, id: newAgendamentoRef.id };
+      });
+
+      return agendamentoSalvo!;
     } catch (error) {
       console.error('Erro ao salvar agendamento:', error);
       throw error;
@@ -59,12 +108,7 @@ export const useAgendamentos = () => {
   };
 
   const verificarAgendamentoExistente = (cpf: string): boolean => {
-    // Normaliza o CPF removendo caracteres não numéricos
     const cpfLimpo = cpf.replace(/\D/g, '');
-    
-    // Verifica se existe algum agendamento com este CPF
-    // Nota: Em um cenário real, verificaríamos também se a data do agendamento é futura
-    // Mas como não temos backend, vamos verificar todos os agendamentos armazenados
     return agendamentos.some(agendamento => {
       const agendamentoCpfLimpo = agendamento.cpf.replace(/\D/g, '');
       return agendamentoCpfLimpo === cpfLimpo;
@@ -80,15 +124,18 @@ export const useAgendamentos = () => {
     return senhaAtual;
   };
 
-  const toggleCompareceu = (id: string) => {
-    const novosAgendamentos = agendamentos.map(ag => {
-      if (ag.id === id) {
-        return { ...ag, compareceu: !ag.compareceu };
+  const toggleCompareceu = async (id: string) => {
+    try {
+      const agendamento = agendamentos.find(a => a.id === id);
+      if (agendamento) {
+        const agendamentoRef = doc(db, AGENDAMENTOS_COLLECTION, id);
+        await updateDoc(agendamentoRef, {
+          compareceu: !agendamento.compareceu
+        });
       }
-      return ag;
-    });
-    setAgendamentos(novosAgendamentos);
-    localStorage.setItem(CONFIG.STORAGE_KEYS.AGENDAMENTOS, JSON.stringify(novosAgendamentos));
+    } catch (error) {
+      console.error("Erro ao atualizar status:", error);
+    }
   };
 
   return {
@@ -101,6 +148,7 @@ export const useAgendamentos = () => {
     verificarAgendamentoExistente,
     obterVagasRestantes,
     gerarProximaSenha,
-    toggleCompareceu
+    toggleCompareceu,
+    loading
   };
 };
