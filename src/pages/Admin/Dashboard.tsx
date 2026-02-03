@@ -25,7 +25,10 @@ import {
   Tags,
   CalendarCheck,
   Pencil,
-  Save
+  Save,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { Agendamento } from '../../types';
 
@@ -41,6 +44,7 @@ export const Dashboard: React.FC = () => {
   const [dataFiltro, setDataFiltro] = useState(new Date().toISOString().split('T')[0]);
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [termoBusca, setTermoBusca] = useState('');
+  const [ordenacao, setOrdenacao] = useState<{ campo: 'horario' | 'nome', direcao: 'asc' | 'desc' }>({ campo: 'horario', direcao: 'asc' });
   
   // Edit & Delete State
   const [agendamentoEditando, setAgendamentoEditando] = useState<Agendamento | null>(null);
@@ -73,14 +77,36 @@ export const Dashboard: React.FC = () => {
     ag.nome.toLowerCase().includes(termoBusca.toLowerCase()) ||
     ag.cpf.includes(termoBusca)
   ).sort((a, b) => {
-    if (mostrarTodos) {
-      // Se mostrar todos, ordena por data primeiro, depois horário
-      const dataA = a.dataAgendamento.split('/').reverse().join('-'); // assumindo formato YYYY-MM-DD
-      const dataB = b.dataAgendamento.split('/').reverse().join('-');
-      if (a.dataAgendamento !== b.dataAgendamento) return a.dataAgendamento.localeCompare(b.dataAgendamento);
+    if (ordenacao.campo === 'nome') {
+      return ordenacao.direcao === 'asc' 
+        ? a.nome.localeCompare(b.nome)
+        : b.nome.localeCompare(a.nome);
     }
-    return a.horario.localeCompare(b.horario);
+
+    // Ordenação por Horário (padrão)
+    if (mostrarTodos) {
+      const dataA = a.dataAgendamento.split('/').reverse().join('-');
+      const dataB = b.dataAgendamento.split('/').reverse().join('-');
+      
+      if (a.dataAgendamento !== b.dataAgendamento) {
+        return ordenacao.direcao === 'asc'
+          ? dataA.localeCompare(dataB)
+          : dataB.localeCompare(dataA);
+      }
+    }
+    
+    return ordenacao.direcao === 'asc'
+      ? a.horario.localeCompare(b.horario)
+      : b.horario.localeCompare(a.horario);
   });
+
+  const handleSort = (campo: 'horario' | 'nome') => {
+    if (ordenacao.campo === campo) {
+      setOrdenacao(prev => ({ ...prev, direcao: prev.direcao === 'asc' ? 'desc' : 'asc' }));
+    } else {
+      setOrdenacao({ campo, direcao: 'asc' });
+    }
+  };
 
   const compareceram = agendamentosDoDia.filter(ag => ag.compareceu).length;
 
@@ -305,8 +331,32 @@ export const Dashboard: React.FC = () => {
                         {mostrarTodos && (
                           <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Data</th>
                         )}
-                        <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Horário</th>
-                        <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Dados do Cidadão</th>
+                        <th 
+                          onClick={() => handleSort('horario')}
+                          className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-50 transition-colors group"
+                        >
+                          <div className="flex items-center gap-2">
+                            Horário
+                            {ordenacao.campo === 'horario' ? (
+                              ordenacao.direcao === 'asc' ? <ArrowUp className="w-4 h-4 text-blue-500" /> : <ArrowDown className="w-4 h-4 text-blue-500" />
+                            ) : (
+                              <ArrowUpDown className="w-4 h-4 text-slate-400 opacity-0 group-hover:opacity-50" />
+                            )}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => handleSort('nome')}
+                          className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-50 transition-colors group"
+                        >
+                          <div className="flex items-center gap-2">
+                            Dados do Cidadão
+                            {ordenacao.campo === 'nome' ? (
+                              ordenacao.direcao === 'asc' ? <ArrowUp className="w-4 h-4 text-blue-500" /> : <ArrowDown className="w-4 h-4 text-blue-500" />
+                            ) : (
+                              <ArrowUpDown className="w-4 h-4 text-slate-400 opacity-0 group-hover:opacity-50" />
+                            )}
+                          </div>
+                        </th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Contato</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Senha</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status de Presença</th>
