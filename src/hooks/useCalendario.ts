@@ -21,11 +21,34 @@ export const useCalendario = () => {
       config.horariosAtendimento
     );
     const regras = Object.keys(config.regrasDatas || {});
+
+    // Alteração: O sistema agora opera SEMPRE em modo manual (whitelist) ou restritivo.
+    // Se houver regras, apenas essas datas são mostradas (respeitando a janela de antecedência).
+    // Se não houver regras, NENHUMA data é mostrada.
     if (regras.length > 0) {
-      const filtrados = dias.filter(d => regras.includes(d));
-      setDiasDisponiveis(filtrados);
+      // Filtra as regras para garantir que estão dentro da janela permitida (futuro)
+      // Usamos a lista 'dias' apenas como referência de janela válida se quisermos ser estritos com feriados/fds,
+      // mas para dar controle total ao admin, vamos permitir qualquer data configurada que esteja na janela de tempo.
+      
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      
+      const datasValidas = regras.filter(dataString => {
+         // Cria data compensando fuso se necessário, ou assumindo string YYYY-MM-DD
+         const [ano, mes, dia] = dataString.split('-').map(Number);
+         const data = new Date(ano, mes - 1, dia);
+         
+         const diffTime = data.getTime() - hoje.getTime();
+         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+         
+         return diffDays >= CONFIG.DIAS_ANTECEDENCIA_MINIMA && 
+                diffDays <= CONFIG.DIAS_ANTECEDENCIA_MAXIMA;
+      });
+
+      setDiasDisponiveis(datasValidas);
     } else {
-      setDiasDisponiveis(dias);
+      // Nenhuma regra configurada = Nenhuma data disponível
+      setDiasDisponiveis([]);
     }
   };
 
