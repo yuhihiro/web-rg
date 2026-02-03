@@ -23,8 +23,11 @@ import {
   AlertCircle,
   FileText,
   Tags,
-  CalendarCheck
+  CalendarCheck,
+  Pencil,
+  Save
 } from 'lucide-react';
+import { Agendamento } from '../../types';
 
 type Tab = 'agendamentos' | 'configuracoes';
 
@@ -34,10 +37,14 @@ export const Dashboard: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   
   // Agendamentos State
-  const { obterAgendamentosPorData, toggleCompareceu, agendamentos } = useAgendamentos();
+  const { obterAgendamentosPorData, toggleCompareceu, agendamentos, deletarAgendamento, atualizarAgendamento } = useAgendamentos();
   const [dataFiltro, setDataFiltro] = useState(new Date().toISOString().split('T')[0]);
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [termoBusca, setTermoBusca] = useState('');
+  
+  // Edit & Delete State
+  const [agendamentoEditando, setAgendamentoEditando] = useState<Agendamento | null>(null);
+  const [agendamentoExcluindo, setAgendamentoExcluindo] = useState<string | null>(null);
 
   // Config State
   const { 
@@ -303,12 +310,13 @@ export const Dashboard: React.FC = () => {
                         <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Contato</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Senha</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status de Presença</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-slate-100">
                       {agendamentosFiltrados.length === 0 ? (
                         <tr>
-                          <td colSpan={mostrarTodos ? 6 : 5} className="px-6 py-12 text-center">
+                          <td colSpan={mostrarTodos ? 7 : 6} className="px-6 py-12 text-center">
                             <div className="flex flex-col items-center justify-center text-slate-400">
                               <Search className="w-12 h-12 mb-3 opacity-20" />
                               <p className="text-lg font-medium">Nenhum agendamento encontrado</p>
@@ -374,6 +382,24 @@ export const Dashboard: React.FC = () => {
                                   </>
                                 )}
                               </button>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  onClick={() => setAgendamentoEditando(ag)}
+                                  className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+                                  title="Editar"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => setAgendamentoExcluindo(ag.id)}
+                                  className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+                                  title="Excluir"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))
@@ -654,6 +680,129 @@ export const Dashboard: React.FC = () => {
           )}
         </div>
       </main>
+      {/* Modais */}
+      
+      {/* Modal de Exclusão */}
+      {agendamentoExcluindo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-fadeIn">
+            <div className="flex flex-col items-center text-center mb-6">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center text-red-600 mb-4">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800">Confirmar Exclusão</h3>
+              <p className="text-slate-500 mt-2">
+                Tem certeza que deseja excluir este agendamento? Esta ação não pode ser desfeita.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setAgendamentoExcluindo(null)}
+                className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 font-medium rounded-xl hover:bg-slate-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  if (agendamentoExcluindo) {
+                    await deletarAgendamento(agendamentoExcluindo);
+                    setAgendamentoExcluindo(null);
+                  }
+                }}
+                className="flex-1 px-4 py-2 bg-red-500 text-white font-medium rounded-xl hover:bg-red-600 transition-colors"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Edição */}
+      {agendamentoEditando && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 animate-fadeIn">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-slate-800">Editar Agendamento</h3>
+              <button 
+                onClick={() => setAgendamentoEditando(null)}
+                className="text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Nome Completo</label>
+                <input
+                  type="text"
+                  value={agendamentoEditando.nome}
+                  onChange={(e) => setAgendamentoEditando({...agendamentoEditando, nome: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">CPF</label>
+                  <input
+                    type="text"
+                    value={agendamentoEditando.cpf}
+                    onChange={(e) => setAgendamentoEditando({...agendamentoEditando, cpf: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Telefone</label>
+                  <input
+                    type="text"
+                    value={agendamentoEditando.telefone}
+                    onChange={(e) => setAgendamentoEditando({...agendamentoEditando, telefone: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Email (Opcional)</label>
+                <input
+                  type="email"
+                  value={agendamentoEditando.email || ''}
+                  onChange={(e) => setAgendamentoEditando({...agendamentoEditando, email: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-8">
+              <button
+                onClick={() => setAgendamentoEditando(null)}
+                className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-700 font-medium rounded-xl hover:bg-slate-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  if (agendamentoEditando) {
+                    await atualizarAgendamento(agendamentoEditando.id, {
+                      nome: agendamentoEditando.nome,
+                      cpf: agendamentoEditando.cpf,
+                      telefone: agendamentoEditando.telefone,
+                      email: agendamentoEditando.email
+                    });
+                    setAgendamentoEditando(null);
+                  }
+                }}
+                className="flex-1 px-4 py-2.5 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+              >
+                <Save className="w-4 h-4" />
+                Salvar Alterações
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

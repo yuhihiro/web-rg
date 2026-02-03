@@ -99,8 +99,38 @@ export const useAgendamentos = () => {
 
       return agendamentoSalvo!;
     } catch (error) {
-      console.error('Erro ao salvar agendamento:', error);
+      console.error("Erro ao salvar agendamento:", error);
       throw error;
+    }
+  };
+
+  const atualizarAgendamento = async (id: string, dados: Partial<Agendamento>) => {
+    try {
+      const agendamentoRef = doc(db, AGENDAMENTOS_COLLECTION, id);
+      await updateDoc(agendamentoRef, dados);
+    } catch (error) {
+      console.error("Erro ao atualizar agendamento:", error);
+      throw error;
+    }
+  };
+
+  const deletarAgendamento = async (id: string) => {
+    try {
+      // Importado dinamicamente para evitar erro de referência circular se houver, 
+      // mas aqui vamos usar deleteDoc direto do firebase/firestore
+      const { deleteDoc } = await import('firebase/firestore');
+      const agendamentoRef = doc(db, AGENDAMENTOS_COLLECTION, id);
+      await deleteDoc(agendamentoRef);
+    } catch (error) {
+      console.error("Erro ao deletar agendamento:", error);
+      throw error;
+    }
+  };
+
+  const toggleCompareceu = async (id: string) => {
+    const agendamento = agendamentos.find(a => a.id === id);
+    if (agendamento) {
+      await atualizarAgendamento(id, { compareceu: !agendamento.compareceu });
     }
   };
 
@@ -134,31 +164,19 @@ export const useAgendamentos = () => {
     return senhaAtual;
   };
 
-  const toggleCompareceu = async (id: string) => {
-    try {
-      const agendamento = agendamentos.find(a => a.id === id);
-      if (agendamento) {
-        const agendamentoRef = doc(db, AGENDAMENTOS_COLLECTION, id);
-        await updateDoc(agendamentoRef, {
-          compareceu: !agendamento.compareceu
-        });
-      }
-    } catch (error) {
-      console.error("Erro ao atualizar status:", error);
-    }
-  };
-
   return {
     agendamentos,
+    loading,
     senhaAtual,
     salvarAgendamento,
+    atualizarAgendamento,
+    deletarAgendamento,
+    toggleCompareceu,
     obterAgendamentosPorData,
     contarAgendamentosPorHorario,
     verificarDisponibilidade,
     verificarAgendamentoExistente,
     obterVagasRestantes,
-    gerarProximaSenha,
-    toggleCompareceu,
-    loading
+    gerarProximaSenha
   };
 };
