@@ -1,13 +1,17 @@
-"use client"
-
-import React, { useState, useMemo } from 'react'
+import React, { useState } from 'react';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { useAuth } from '../../context/AuthContext';
+import { useAgendamentos } from '../../hooks/useAgendamentos';
+import { useConfig } from '../../hooks/useConfig';
+import { AdminCalendar } from '../../components/Admin/AdminCalendar';
 import { 
   Calendar as CalendarIcon, 
   Clock, 
   Settings, 
   LogOut, 
   Users, 
-  CheckCircle2, 
+  CheckSquare, 
   X, 
   Plus, 
   Trash2,
@@ -19,774 +23,637 @@ import {
   AlertCircle,
   FileText,
   Tags,
-  Phone,
-  Mail,
-  Hash,
-  ChevronDown,
-  Sparkles,
-  TrendingUp,
-  CalendarDays
-} from 'lucide-react'
-import { cn } from '@/lib/utils'
+  CalendarCheck
+} from 'lucide-react';
 
-type Tab = 'agendamentos' | 'configuracoes'
+type Tab = 'agendamentos' | 'configuracoes';
 
-type Agendamento = {
-  id: string
-  nome: string
-  cpf: string
-  telefone: string
-  email: string
-  horario: string
-  dataAgendamento: string
-  senha: number
-  compareceu: boolean
-}
-
-// Mock data for demonstration
-const mockAgendamentos: Agendamento[] = [
-  { id: '1', nome: 'Maria Silva Santos', cpf: '123.456.789-00', telefone: '(11) 99999-1234', email: 'maria@email.com', horario: '08:00', dataAgendamento: '2026-02-03', senha: 1, compareceu: true },
-  { id: '2', nome: 'João Pedro Oliveira', cpf: '987.654.321-00', telefone: '(11) 98888-5678', email: 'joao@email.com', horario: '08:30', dataAgendamento: '2026-02-03', senha: 2, compareceu: true },
-  { id: '3', nome: 'Ana Carolina Ferreira', cpf: '456.789.123-00', telefone: '(11) 97777-9012', email: 'ana@email.com', horario: '09:00', dataAgendamento: '2026-02-03', senha: 3, compareceu: false },
-  { id: '4', nome: 'Carlos Eduardo Lima', cpf: '321.654.987-00', telefone: '(11) 96666-3456', email: 'carlos@email.com', horario: '09:30', dataAgendamento: '2026-02-03', senha: 4, compareceu: false },
-  { id: '5', nome: 'Beatriz Almeida Costa', cpf: '789.123.456-00', telefone: '(11) 95555-7890', email: 'beatriz@email.com', horario: '10:00', dataAgendamento: '2026-02-03', senha: 5, compareceu: false },
-]
-
-const mockConfig = {
-  horariosAtendimento: ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '14:00', '14:30', '15:00'],
-  feriados: ['2026-02-16', '2026-02-17', '2026-04-21'],
-  limiteVagasPorDia: 50,
-  categorias: [
-    { id: '1', nome: 'Idoso', idadeMin: 60, idadeMax: 120 },
-    { id: '2', nome: 'Criança', idadeMin: 0, idadeMax: 12 },
-  ],
-  capacidadePorHorario: {} as Record<string, number>,
-}
-
-export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<Tab>('agendamentos')
-  const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [agendamentos, setAgendamentos] = useState(mockAgendamentos)
+export const Dashboard: React.FC = () => {
+  const { logout } = useAuth();
+  const [activeTab, setActiveTab] = useState<Tab>('agendamentos');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   
   // Agendamentos State
-  const [dataFiltro, setDataFiltro] = useState(new Date().toISOString().split('T')[0])
-  const [mostrarTodos, setMostrarTodos] = useState(false)
-  const [termoBusca, setTermoBusca] = useState('')
-  const [expandedCard, setExpandedCard] = useState<string | null>(null)
+  const { obterAgendamentosPorData, toggleCompareceu, agendamentos } = useAgendamentos();
+  const [dataFiltro, setDataFiltro] = useState(new Date().toISOString().split('T')[0]);
+  const [mostrarTodos, setMostrarTodos] = useState(false);
+  const [termoBusca, setTermoBusca] = useState('');
 
   // Config State
-  const [config, setConfig] = useState(mockConfig)
-  const [novoHorario, setNovoHorario] = useState('')
-  const [novoFeriado, setNovoFeriado] = useState('')
-  const [novaCategoria, setNovaCategoria] = useState({ nome: '', idadeMin: '', idadeMax: '' })
+  const { 
+    config, 
+    adicionarHorario, 
+    removerHorario, 
+    adicionarFeriado, 
+    removerFeriado,
+    atualizarLimiteVagas,
+    salvarCategoria,
+    removerCategoria,
+    salvarRegraData,
+    removerRegraData,
+    atualizarCapacidadeHorario
+  } = useConfig();
+  const [novoHorario, setNovoHorario] = useState('');
+  const [novoFeriado, setNovoFeriado] = useState('');
+  
+  // New Config State
+  const [novaCategoria, setNovaCategoria] = useState({ nome: '', idadeMin: '', idadeMax: '' });
+  const [novaRegraData, setNovaRegraData] = useState({ data: '', categoriaId: '' });
 
   // Derived State
-  const agendamentosDoDia = useMemo(() => {
-    if (mostrarTodos) return agendamentos
-    return agendamentos.filter(ag => ag.dataAgendamento === dataFiltro)
-  }, [agendamentos, dataFiltro, mostrarTodos])
-
-  const agendamentosFiltrados = useMemo(() => {
-    return agendamentosDoDia.filter(ag => 
-      ag.nome.toLowerCase().includes(termoBusca.toLowerCase()) ||
-      ag.cpf.includes(termoBusca)
-    ).sort((a, b) => a.horario.localeCompare(b.horario))
-  }, [agendamentosDoDia, termoBusca])
-
-  const compareceram = agendamentosDoDia.filter(ag => ag.compareceu).length
-  const taxaComparecimento = agendamentosDoDia.length ? Math.round((compareceram / agendamentosDoDia.length) * 100) : 0
-
-  const toggleCompareceu = (id: string) => {
-    setAgendamentos(prev => prev.map(ag => 
-      ag.id === id ? { ...ag, compareceu: !ag.compareceu } : ag
-    ))
-  }
-
-  const adicionarHorario = (horario: string) => {
-    if (!config.horariosAtendimento.includes(horario)) {
-      setConfig(prev => ({
-        ...prev,
-        horariosAtendimento: [...prev.horariosAtendimento, horario].sort()
-      }))
+  const agendamentosDoDia = mostrarTodos ? agendamentos : obterAgendamentosPorData(dataFiltro);
+  const agendamentosFiltrados = agendamentosDoDia.filter(ag => 
+    ag.nome.toLowerCase().includes(termoBusca.toLowerCase()) ||
+    ag.cpf.includes(termoBusca)
+  ).sort((a, b) => {
+    if (mostrarTodos) {
+      // Se mostrar todos, ordena por data primeiro, depois horário
+      const dataA = a.dataAgendamento.split('/').reverse().join('-'); // assumindo formato YYYY-MM-DD
+      const dataB = b.dataAgendamento.split('/').reverse().join('-');
+      if (a.dataAgendamento !== b.dataAgendamento) return a.dataAgendamento.localeCompare(b.dataAgendamento);
     }
-  }
+    return a.horario.localeCompare(b.horario);
+  });
 
-  const removerHorario = (horario: string) => {
-    setConfig(prev => ({
-      ...prev,
-      horariosAtendimento: prev.horariosAtendimento.filter(h => h !== horario)
-    }))
-  }
+  const compareceram = agendamentosDoDia.filter(ag => ag.compareceu).length;
 
-  const adicionarFeriado = (feriado: string) => {
-    if (!config.feriados.includes(feriado)) {
-      setConfig(prev => ({
-        ...prev,
-        feriados: [...prev.feriados, feriado].sort()
-      }))
-    }
-  }
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
 
-  const removerFeriado = (feriado: string) => {
-    setConfig(prev => ({
-      ...prev,
-      feriados: prev.feriados.filter(f => f !== feriado)
-    }))
-  }
+    doc.setFontSize(16);
+    doc.text(`Lista de Agendamentos - ${new Date(dataFiltro).toLocaleDateString('pt-BR')}`, 14, 15);
+    
+    doc.setFontSize(10);
+    doc.text(`Total: ${agendamentosFiltrados.length} | Compareceram: ${compareceram}`, 14, 22);
+
+    const tableData = agendamentosFiltrados.map(ag => [
+      ag.horario,
+      ag.nome,
+      ag.cpf,
+      ag.telefone,
+      ag.senha.toString(),
+      ag.compareceu ? 'Sim' : 'Não'
+    ]);
+
+    autoTable(doc, {
+      head: [['Horário', 'Nome', 'CPF', 'Telefone', 'Senha', 'Compareceu']],
+      body: tableData,
+      startY: 25,
+      headStyles: { fillColor: [41, 128, 185] },
+      alternateRowStyles: { fillColor: [245, 245, 245] },
+      styles: { fontSize: 9 },
+    });
+
+    doc.save(`agendamentos_${dataFiltro}.pdf`);
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-50 to-blue-50/30 flex font-sans text-slate-800">
+    <div className="min-h-screen bg-slate-50 flex font-sans text-slate-800">
       {/* Sidebar */}
       <aside 
-        className={cn(
-          "bg-slate-900 text-white flex-shrink-0 transition-all duration-500 ease-out flex flex-col fixed md:relative z-30 h-full",
-          sidebarOpen ? 'w-72' : 'w-20'
-        )}
+        className={`${
+          sidebarOpen ? 'w-64' : 'w-20'
+        } bg-slate-900 text-white flex-shrink-0 transition-all duration-300 flex flex-col fixed md:relative z-30 h-full shadow-xl`}
       >
-        {/* Logo Area */}
-        <div className="p-6 border-b border-slate-800/50">
-          <div className="flex items-center justify-between">
-            {sidebarOpen ? (
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-blue-500/25">
-                  <Sparkles className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-white">Admin RG</h2>
-                  <p className="text-slate-400 text-xs">Painel Gerencial</p>
-                </div>
-              </div>
-            ) : (
-              <div className="w-10 h-10 mx-auto rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center">
-                <Sparkles className="w-5 h-5 text-white" />
-              </div>
-            )}
-            <button 
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="text-slate-400 hover:text-white transition-colors p-2 hover:bg-slate-800 rounded-lg md:hidden"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-          </div>
+        <div className="p-6 flex items-center justify-between border-b border-slate-800">
+          {sidebarOpen ? (
+            <div>
+              <h2 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">Admin RG</h2>
+              <p className="text-slate-400 text-xs mt-1">Painel Gerencial</p>
+            </div>
+          ) : (
+            <div className="mx-auto font-bold text-xl text-blue-400">RG</div>
+          )}
+          <button 
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="text-slate-400 hover:text-white transition-colors md:hidden"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 mt-6 px-3 space-y-1">
-          <p className={cn("text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-3 px-4 transition-opacity", !sidebarOpen && "opacity-0")}>
-            Menu Principal
-          </p>
-          
-          <NavButton 
-            active={activeTab === 'agendamentos'}
+        <nav className="flex-1 mt-6 px-3 space-y-2">
+          <button
             onClick={() => setActiveTab('agendamentos')}
-            icon={<Users className="w-5 h-5" />}
-            label="Agendamentos"
-            sidebarOpen={sidebarOpen}
-            badge={agendamentosDoDia.length}
-          />
+            className={`w-full flex items-center px-4 py-3 rounded-xl transition-all duration-200 group ${
+              activeTab === 'agendamentos' 
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' 
+                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+            }`}
+          >
+            <Users className={`w-5 h-5 ${sidebarOpen ? 'mr-3' : 'mx-auto'}`} />
+            {sidebarOpen && <span className="font-medium">Agendamentos</span>}
+            {sidebarOpen && activeTab === 'agendamentos' && <ChevronRight className="w-4 h-4 ml-auto opacity-50" />}
+          </button>
 
-          <NavButton 
-            active={activeTab === 'configuracoes'}
+          <button
             onClick={() => setActiveTab('configuracoes')}
-            icon={<Settings className="w-5 h-5" />}
-            label="Configurações"
-            sidebarOpen={sidebarOpen}
-          />
+            className={`w-full flex items-center px-4 py-3 rounded-xl transition-all duration-200 group ${
+              activeTab === 'configuracoes' 
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' 
+                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+            }`}
+          >
+            <Settings className={`w-5 h-5 ${sidebarOpen ? 'mr-3' : 'mx-auto'}`} />
+            {sidebarOpen && <span className="font-medium">Configurações</span>}
+            {sidebarOpen && activeTab === 'configuracoes' && <ChevronRight className="w-4 h-4 ml-auto opacity-50" />}
+          </button>
         </nav>
 
-        {/* Logout */}
-        <div className="p-4 border-t border-slate-800/50">
+        <div className="p-4 border-t border-slate-800">
           <button
-            className={cn(
-              "w-full flex items-center px-4 py-3 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200",
-              !sidebarOpen && 'justify-center'
-            )}
+            onClick={logout}
+            className={`w-full flex items-center px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors ${!sidebarOpen && 'justify-center'}`}
           >
-            <LogOut className={cn("w-5 h-5", sidebarOpen && "mr-3")} />
-            {sidebarOpen && <span className="font-medium">Sair</span>}
+            <LogOut className={`w-5 h-5 ${sidebarOpen ? 'mr-3' : ''}`} />
+            {sidebarOpen && <span className="font-medium">Sair do Sistema</span>}
           </button>
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className={cn("flex-1 overflow-y-auto transition-all duration-500", sidebarOpen ? 'ml-0' : 'ml-0')}>
-        <div className="p-6 lg:p-10 max-w-7xl mx-auto">
+      <main className={`flex-1 overflow-y-auto transition-all duration-300 ${sidebarOpen ? 'ml-0' : 'ml-0'}`}>
+        <div className="p-8 max-w-7xl mx-auto">
           {activeTab === 'agendamentos' ? (
-            <div className="space-y-8">
-              {/* Header */}
-              <header className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6">
+            <div className="space-y-8 animate-fadeIn">
+              {/* Header Section */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                 <div>
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-2 h-8 bg-gradient-to-b from-blue-500 to-cyan-400 rounded-full" />
-                    <h1 className="text-3xl lg:text-4xl font-bold text-slate-900 tracking-tight">
-                      Agendamentos
-                    </h1>
-                  </div>
-                  <p className="text-slate-500 ml-5">Gerencie presenças e acompanhe o fluxo de atendimento</p>
+                  <h1 className="text-3xl font-bold text-slate-800">Controle de Agendamentos</h1>
+                  <p className="text-slate-500 mt-2">Gerencie a lista de presença diária e acompanhe o fluxo.</p>
                 </div>
                 
-                {/* Date Picker Card */}
-                <div className="flex items-center gap-3 bg-white p-1.5 pl-4 rounded-2xl shadow-sm border border-slate-200/80 hover:shadow-md hover:border-slate-300 transition-all duration-300 group">
-                  <CalendarIcon className="w-5 h-5 text-blue-500 group-hover:scale-110 transition-transform" />
-                  <div className="flex flex-col pr-2">
-                    <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Visualizando</span>
+                <div className="flex items-center gap-4 bg-white p-2 pr-4 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
+                  <div className="bg-blue-50 p-2 rounded-xl">
+                    <CalendarIcon className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs text-slate-500 font-semibold uppercase">Data de Visualização</span>
+                      <button 
+                        onClick={() => setMostrarTodos(!mostrarTodos)}
+                        className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
+                          mostrarTodos 
+                            ? 'bg-blue-600 text-white' 
+                            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                        }`}
+                      >
+                        {mostrarTodos ? 'Ver Filtro' : 'Ver Todos'}
+                      </button>
+                    </div>
                     {!mostrarTodos ? (
                       <input
                         type="date"
                         value={dataFiltro}
                         onChange={(e) => setDataFiltro(e.target.value)}
-                        className="outline-none text-slate-800 font-semibold bg-transparent cursor-pointer text-sm"
+                        className="outline-none text-slate-700 font-medium bg-transparent cursor-pointer"
                       />
                     ) : (
-                      <span className="text-slate-800 font-semibold text-sm">Todos os registros</span>
+                      <span className="text-slate-700 font-medium text-sm py-0.5">Exibindo todos os registros</span>
                     )}
                   </div>
-                  <button 
-                    onClick={() => setMostrarTodos(!mostrarTodos)}
-                    className={cn(
-                      "px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-300",
-                      mostrarTodos 
-                        ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/25' 
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    )}
-                  >
-                    {mostrarTodos ? 'Filtrar' : 'Ver Todos'}
-                  </button>
                 </div>
-              </header>
-
-              {/* Stats Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                <StatCard 
-                  icon={<Users className="w-6 h-6" />}
-                  iconBg="bg-blue-500"
-                  label="Total Agendado"
-                  value={agendamentosDoDia.length}
-                  sublabel={`Para ${new Date(dataFiltro).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}`}
-                />
-                <StatCard 
-                  icon={<UserCheck className="w-6 h-6" />}
-                  iconBg="bg-emerald-500"
-                  label="Compareceram"
-                  value={compareceram}
-                  progress={taxaComparecimento}
-                  sublabel={`${taxaComparecimento}% de presença`}
-                />
-                <StatCard 
-                  icon={<AlertCircle className="w-6 h-6" />}
-                  iconBg="bg-amber-500"
-                  label="Pendentes"
-                  value={agendamentosDoDia.length - compareceram}
-                  sublabel="Aguardando chegada"
-                />
               </div>
 
-              {/* Search & Actions Bar */}
-              <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-                <div className="relative w-full sm:w-96">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <Search className="w-5 h-5 text-slate-400" />
+              {/* Stats Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-md transition-all">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
+                  <div className="relative">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="p-2 bg-blue-100 rounded-lg text-blue-600">
+                        <Users className="w-5 h-5" />
+                      </div>
+                      <p className="text-slate-500 text-sm font-medium">Total Agendado</p>
+                    </div>
+                    <p className="text-4xl font-bold text-slate-800">{agendamentosDoDia.length}</p>
+                    <p className="text-xs text-slate-400 mt-2">Para {new Date(dataFiltro).toLocaleDateString('pt-BR')}</p>
                   </div>
-                  <input
-                    type="text"
-                    placeholder="Buscar por nome ou CPF..."
-                    value={termoBusca}
-                    onChange={(e) => setTermoBusca(e.target.value)}
-                    className="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-sm shadow-sm placeholder:text-slate-400"
-                  />
-                  {termoBusca && (
-                    <button 
-                      onClick={() => setTermoBusca('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+                </div>
+
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-md transition-all">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-50 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
+                  <div className="relative">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="p-2 bg-emerald-100 rounded-lg text-emerald-600">
+                        <UserCheck className="w-5 h-5" />
+                      </div>
+                      <p className="text-slate-500 text-sm font-medium">Compareceram</p>
+                    </div>
+                    <p className="text-4xl font-bold text-slate-800">{compareceram}</p>
+                    <div className="w-full bg-slate-100 h-1.5 mt-3 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                        style={{ width: `${agendamentosDoDia.length ? (compareceram / agendamentosDoDia.length) * 100 : 0}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-md transition-all">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-orange-50 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
+                  <div className="relative">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="p-2 bg-orange-100 rounded-lg text-orange-600">
+                        <AlertCircle className="w-5 h-5" />
+                      </div>
+                      <p className="text-slate-500 text-sm font-medium">Pendentes</p>
+                    </div>
+                    <p className="text-4xl font-bold text-slate-800">{agendamentosDoDia.length - compareceram}</p>
+                    <p className="text-xs text-slate-400 mt-2">Aguardando chegada</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Search and Table */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <h3 className="text-lg font-bold text-slate-800">Lista de Cidadãos</h3>
+                    <button
+                      onClick={handleExportPDF}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium border border-slate-200"
+                      title="Exportar para PDF"
                     >
-                      <X className="w-4 h-4 text-slate-400" />
+                      <FileText className="w-4 h-4" />
+                      <span className="hidden sm:inline">Exportar PDF</span>
                     </button>
-                  )}
-                </div>
-                
-                <button
-                  className="flex items-center gap-2.5 px-5 py-3 bg-white border border-slate-200 text-slate-700 rounded-2xl hover:bg-slate-50 hover:border-slate-300 transition-all text-sm font-semibold shadow-sm group"
-                >
-                  <FileText className="w-4 h-4 text-slate-500 group-hover:text-blue-500 transition-colors" />
-                  Exportar PDF
-                </button>
-              </div>
-
-              {/* Cards List */}
-              <div className="space-y-4">
-                {agendamentosFiltrados.length === 0 ? (
-                  <EmptyState search={termoBusca} />
-                ) : (
-                  agendamentosFiltrados.map((ag, index) => (
-                    <AgendamentoCard 
-                      key={ag.id}
-                      agendamento={ag}
-                      index={index}
-                      expanded={expandedCard === ag.id}
-                      onToggleExpand={() => setExpandedCard(expandedCard === ag.id ? null : ag.id)}
-                      onToggleCompareceu={() => toggleCompareceu(ag.id)}
+                  </div>
+                  <div className="relative w-full sm:w-72">
+                    <Search className="w-5 h-5 text-slate-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Buscar por nome ou CPF..."
+                      value={termoBusca}
+                      onChange={(e) => setTermoBusca(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm"
                     />
-                  ))
-                )}
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-100">
+                    <thead className="bg-slate-50/50">
+                      <tr>
+                        {mostrarTodos && (
+                          <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Data</th>
+                        )}
+                        <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Horário</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Dados do Cidadão</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Contato</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Senha</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status de Presença</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-slate-100">
+                      {agendamentosFiltrados.length === 0 ? (
+                        <tr>
+                          <td colSpan={mostrarTodos ? 6 : 5} className="px-6 py-12 text-center">
+                            <div className="flex flex-col items-center justify-center text-slate-400">
+                              <Search className="w-12 h-12 mb-3 opacity-20" />
+                              <p className="text-lg font-medium">Nenhum agendamento encontrado</p>
+                              <p className="text-sm">Tente mudar a data ou o termo de busca.</p>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        agendamentosFiltrados.map((ag) => (
+                          <tr key={ag.id} className={`transition-colors ${ag.compareceu ? 'bg-emerald-50/30' : 'hover:bg-slate-50'}`}>
+                            {mostrarTodos && (
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm font-medium text-slate-700">
+                                  {new Date(ag.dataAgendamento + 'T12:00:00').toLocaleDateString('pt-BR')}
+                                </span>
+                              </td>
+                            )}
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-bold">
+                                {ag.horario}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center">
+                                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm mr-3 shadow-md shadow-blue-200">
+                                  {ag.nome.charAt(0).toUpperCase()}{ag.nome.split(' ').length > 1 ? ag.nome.split(' ')[1].charAt(0).toUpperCase() : ''}
+                                </div>
+                                <div>
+                                  <div className="text-sm font-bold text-slate-900">{ag.nome}</div>
+                                  <div className="text-xs text-slate-500 font-mono bg-slate-100 px-1.5 py-0.5 rounded mt-1 inline-block">
+                                    CPF: {ag.cpf}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-slate-700">{ag.telefone}</div>
+                              <div className="text-xs text-slate-400">{ag.email}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="font-mono text-sm font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">
+                                #{ag.senha}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <button
+                                onClick={() => toggleCompareceu(ag.id)}
+                                className={`flex items-center px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 shadow-sm ${
+                                  ag.compareceu 
+                                    ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 ring-2 ring-emerald-500/20' 
+                                    : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 hover:border-slate-400'
+                                }`}
+                              >
+                                {ag.compareceu ? (
+                                  <>
+                                    <CheckSquare className="w-4 h-4 mr-2" />
+                                    Confirmado
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="w-4 h-4 border-2 border-slate-400 rounded mr-2"></div>
+                                    Marcar Presença
+                                  </>
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           ) : (
-            <ConfiguracoesTab 
-              config={config}
-              novoHorario={novoHorario}
-              setNovoHorario={setNovoHorario}
-              adicionarHorario={adicionarHorario}
-              removerHorario={removerHorario}
-              novoFeriado={novoFeriado}
-              setNovoFeriado={setNovoFeriado}
-              adicionarFeriado={adicionarFeriado}
-              removerFeriado={removerFeriado}
-              novaCategoria={novaCategoria}
-              setNovaCategoria={setNovaCategoria}
-              setConfig={setConfig}
-            />
+            <div className="space-y-8 animate-fadeIn">
+              <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+                <div>
+                  <h1 className="text-3xl font-bold text-slate-800">Configurações do Sistema</h1>
+                  <p className="text-slate-500 mt-2">Personalize horários, datas bloqueadas e limites de atendimento.</p>
+                </div>
+              </header>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Coluna 1: Horários e Feriados */}
+                <div className="space-y-8">
+                  {/* Horários */}
+                  <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="p-3 bg-blue-100 rounded-xl text-blue-600">
+                        <Clock className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-800">Horários de Atendimento</h3>
+                        <p className="text-sm text-slate-400">Defina os horários disponíveis para agendamento</p>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 mb-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                      <input
+                        type="time"
+                        value={novoHorario}
+                        onChange={(e) => setNovoHorario(e.target.value)}
+                        className="flex-1 bg-white border border-slate-200 rounded-lg px-4 py-2 text-slate-700 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                      />
+                      <button
+                        onClick={() => {
+                          if (novoHorario) {
+                            adicionarHorario(novoHorario);
+                            setNovoHorario('');
+                          }
+                        }}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 active:scale-95 transition-all shadow-lg shadow-blue-200"
+                      >
+                        <Plus className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {config.horariosAtendimento?.map((horario) => (
+                        <span key={horario} className="inline-flex items-center px-4 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-700 shadow-sm hover:border-blue-300 transition-colors group">
+                          {horario}
+                          <button
+                            onClick={() => removerHorario(horario)}
+                            className="ml-2 text-slate-400 hover:text-red-500 transition-colors bg-slate-100 p-0.5 rounded-full"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+
+                  <div className="mt-6">
+                    <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                      <Users className="w-4 h-4 text-slate-500" />
+                      Capacidade por Horário
+                    </h4>
+                    <div className="space-y-2">
+                      {config.horariosAtendimento?.map((horario) => (
+                        <div key={`cap_${horario}`} className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+                          <span className="text-sm font-medium text-slate-700">{horario}</span>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={0}
+                              value={config.capacidadePorHorario?.[horario] ?? 0}
+                              onChange={(e) => atualizarCapacidadeHorario(horario, Number(e.target.value))}
+                              className="w-20 bg-white border border-slate-200 rounded-lg px-3 py-1 text-slate-700 outline-none text-sm"
+                            />
+                            <span className="text-xs text-slate-500">pessoas</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  </div>
+
+                  {/* Feriados / Bloqueios */}
+                  <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="p-3 bg-red-100 rounded-xl text-red-600">
+                        <CalendarIcon className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-800">Dias Bloqueados</h3>
+                        <p className="text-sm text-slate-400">Adicione feriados ou dias sem expediente</p>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 mb-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                      <input
+                        type="date"
+                        value={novoFeriado}
+                        onChange={(e) => setNovoFeriado(e.target.value)}
+                        className="flex-1 bg-white border border-slate-200 rounded-lg px-4 py-2 text-slate-700 focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all"
+                      />
+                      <button
+                        onClick={() => {
+                          if (novoFeriado) {
+                            adicionarFeriado(novoFeriado);
+                            setNovoFeriado('');
+                          }
+                        }}
+                        className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 active:scale-95 transition-all shadow-lg shadow-red-200"
+                      >
+                        <Plus className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                      {config.feriados?.map((feriado) => (
+                        <div key={feriado} className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-xl hover:border-red-200 hover:shadow-sm transition-all group">
+                          <span className="text-slate-700 font-medium flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-red-400"></div>
+                            {new Date(feriado + 'T12:00:00').toLocaleDateString('pt-BR', {
+                              weekday: 'long',
+                              day: 'numeric',
+                              month: 'long',
+                              year: 'numeric'
+                            })}
+                          </span>
+                          <button
+                            onClick={() => removerFeriado(feriado)}
+                            className="text-slate-400 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Coluna 2: Gerais, Categorias e Regras */}
+                <div className="space-y-8">
+                  {/* Geral */}
+                  <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="p-3 bg-purple-100 rounded-xl text-purple-600">
+                        <Shield className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-800">Parâmetros Gerais</h3>
+                        <p className="text-sm text-slate-400">Configurações globais do sistema</p>
+                      </div>
+                    </div>
+
+                    <div className="max-w-md">
+                      <label className="block text-sm font-bold text-slate-700 mb-2">
+                        Limite de Vagas por Dia
+                      </label>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="number"
+                          value={config.limiteVagasPorDia || 0}
+                          onChange={(e) => atualizarLimiteVagas(Number(e.target.value))}
+                          className="w-32 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-lg font-bold text-slate-800 focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none transition-all"
+                        />
+                        <span className="text-slate-500 text-sm">
+                          vagas disponíveis para agendamento diário
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Categorias */}
+                  <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="p-3 bg-indigo-100 rounded-xl text-indigo-600">
+                        <Tags className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-800">Categorias de Público</h3>
+                        <p className="text-sm text-slate-400">Defina faixas etárias e grupos</p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3 mb-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                      <input
+                        type="text"
+                        placeholder="Nome (ex: Idoso, Criança)"
+                        value={novaCategoria.nome}
+                        onChange={(e) => setNovaCategoria({...novaCategoria, nome: e.target.value})}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2 text-slate-700 outline-none"
+                      />
+                      <div className="flex gap-3">
+                        <input
+                          type="number"
+                          placeholder="Idade Mín"
+                          value={novaCategoria.idadeMin}
+                          onChange={(e) => setNovaCategoria({...novaCategoria, idadeMin: e.target.value})}
+                          className="flex-1 bg-white border border-slate-200 rounded-lg px-4 py-2 text-slate-700 outline-none"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Idade Máx"
+                          value={novaCategoria.idadeMax}
+                          onChange={(e) => setNovaCategoria({...novaCategoria, idadeMax: e.target.value})}
+                          className="flex-1 bg-white border border-slate-200 rounded-lg px-4 py-2 text-slate-700 outline-none"
+                        />
+                        <button
+                          onClick={() => {
+                            if (novaCategoria.nome && novaCategoria.idadeMin && novaCategoria.idadeMax) {
+                              salvarCategoria({
+                                id: `cat_${Date.now()}`,
+                                nome: novaCategoria.nome,
+                                idadeMin: Number(novaCategoria.idadeMin),
+                                idadeMax: Number(novaCategoria.idadeMax)
+                              });
+                              setNovaCategoria({ nome: '', idadeMin: '', idadeMax: '' });
+                            }
+                          }}
+                          className="bg-indigo-500 text-white px-4 py-2 rounded-lg hover:bg-indigo-600 transition-all"
+                        >
+                          <Plus className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+                      {config.categorias?.map((cat) => (
+                        <div key={cat.id} className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-xl">
+                          <div>
+                            <p className="font-bold text-slate-700">{cat.nome}</p>
+                            <p className="text-xs text-slate-500">{cat.idadeMin} a {cat.idadeMax} anos</p>
+                          </div>
+                          <button
+                            onClick={() => removerCategoria(cat.id)}
+                            className="text-slate-400 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      {(!config.categorias || config.categorias.length === 0) && (
+                        <p className="text-sm text-slate-400 text-center py-4">Nenhuma categoria cadastrada</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Regras por Data - Substituído pelo Calendário Visual */}
+        <AdminCalendar
+          config={config}
+          onToggleDate={(data, categoriaId) => {
+            if (config.regrasDatas && config.regrasDatas[data]) {
+              removerRegraData(data);
+            } else {
+              salvarRegraData(data, { categoriaId });
+            }
+          }}
+          onCreateDefaultCategory={() => {
+            salvarCategoria({
+              id: crypto.randomUUID(),
+              nome: 'Público Geral',
+              idadeMin: 0,
+              idadeMax: 100
+            });
+          }}
+        />
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </main>
     </div>
-  )
-}
-
-// Components
-
-function NavButton({ active, onClick, icon, label, sidebarOpen, badge }: {
-  active: boolean
-  onClick: () => void
-  icon: React.ReactNode
-  label: string
-  sidebarOpen: boolean
-  badge?: number
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "w-full flex items-center px-4 py-3 rounded-xl transition-all duration-300 group relative",
-        active 
-          ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-600/30' 
-          : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
-      )}
-    >
-      <span className={cn(sidebarOpen ? '' : 'mx-auto')}>{icon}</span>
-      {sidebarOpen && (
-        <>
-          <span className="ml-3 font-medium">{label}</span>
-          {badge !== undefined && (
-            <span className={cn(
-              "ml-auto px-2 py-0.5 text-xs font-bold rounded-full",
-              active ? "bg-white/20 text-white" : "bg-slate-700 text-slate-300"
-            )}>
-              {badge}
-            </span>
-          )}
-          {active && <ChevronRight className="w-4 h-4 ml-2 opacity-60" />}
-        </>
-      )}
-    </button>
-  )
-}
-
-function StatCard({ icon, iconBg, label, value, sublabel, progress }: {
-  icon: React.ReactNode
-  iconBg: string
-  label: string
-  value: number
-  sublabel: string
-  progress?: number
-}) {
-  return (
-    <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm hover:shadow-lg hover:border-slate-300/80 transition-all duration-300 group cursor-default">
-      <div className="flex items-start justify-between mb-4">
-        <div className={cn("p-3 rounded-2xl text-white shadow-lg", iconBg, `shadow-${iconBg.replace('bg-', '')}/30`)}>
-          {icon}
-        </div>
-        <TrendingUp className="w-5 h-5 text-slate-300 group-hover:text-emerald-400 transition-colors" />
-      </div>
-      <p className="text-sm font-medium text-slate-500 mb-1">{label}</p>
-      <p className="text-4xl font-bold text-slate-900 tracking-tight mb-1">{value}</p>
-      {progress !== undefined && (
-        <div className="w-full bg-slate-100 h-1.5 mt-3 rounded-full overflow-hidden">
-          <div 
-            className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full transition-all duration-700 ease-out"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      )}
-      <p className="text-xs text-slate-400 mt-2">{sublabel}</p>
-    </div>
-  )
-}
-
-function AgendamentoCard({ agendamento, index, expanded, onToggleExpand, onToggleCompareceu }: {
-  agendamento: Agendamento
-  index: number
-  expanded: boolean
-  onToggleExpand: () => void
-  onToggleCompareceu: () => void
-}) {
-  const initials = agendamento.nome.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase()
-  
-  return (
-    <div 
-      className={cn(
-        "bg-white rounded-2xl border transition-all duration-300 overflow-hidden",
-        agendamento.compareceu 
-          ? "border-emerald-200 shadow-emerald-100 shadow-sm" 
-          : "border-slate-200 hover:border-slate-300 hover:shadow-md"
-      )}
-      style={{ animationDelay: `${index * 50}ms` }}
-    >
-      {/* Main Row */}
-      <div className="p-5 flex items-center gap-4">
-        {/* Avatar */}
-        <div className={cn(
-          "w-12 h-12 rounded-2xl flex items-center justify-center text-white font-bold text-sm shadow-lg flex-shrink-0 transition-all duration-300",
-          agendamento.compareceu 
-            ? "bg-gradient-to-br from-emerald-400 to-emerald-500 shadow-emerald-500/30" 
-            : "bg-gradient-to-br from-blue-500 to-indigo-600 shadow-blue-500/30"
-        )}>
-          {initials}
-        </div>
-        
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-bold text-slate-900 truncate">{agendamento.nome}</h3>
-            {agendamento.compareceu && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-semibold rounded-full">
-                <CheckCircle2 className="w-3 h-3" />
-                Presente
-              </span>
-            )}
-          </div>
-          <p className="text-sm text-slate-500 font-mono mt-0.5">CPF: {agendamento.cpf}</p>
-        </div>
-
-        {/* Time Badge */}
-        <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-xl">
-          <Clock className="w-4 h-4 text-slate-500" />
-          <span className="font-bold text-slate-700">{agendamento.horario}</span>
-        </div>
-
-        {/* Ticket Number */}
-        <div className="hidden sm:flex flex-col items-center px-4 py-2 bg-blue-50 rounded-xl">
-          <span className="text-[10px] uppercase tracking-wide text-blue-500 font-semibold">Senha</span>
-          <span className="font-bold text-blue-700 text-lg">#{agendamento.senha}</span>
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onToggleCompareceu}
-            className={cn(
-              "px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 flex items-center gap-2",
-              agendamento.compareceu 
-                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 hover:bg-emerald-600" 
-                : "bg-slate-100 text-slate-600 hover:bg-blue-500 hover:text-white hover:shadow-lg hover:shadow-blue-500/30"
-            )}
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            <span className="hidden lg:inline">{agendamento.compareceu ? 'Confirmado' : 'Confirmar'}</span>
-          </button>
-          
-          <button 
-            onClick={onToggleExpand}
-            className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors"
-          >
-            <ChevronDown className={cn("w-5 h-5 text-slate-400 transition-transform duration-300", expanded && "rotate-180")} />
-          </button>
-        </div>
-      </div>
-
-      {/* Expanded Details */}
-      <div className={cn(
-        "grid transition-all duration-300 ease-out",
-        expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-      )}>
-        <div className="overflow-hidden">
-          <div className="px-5 pb-5 pt-2 border-t border-slate-100">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <DetailItem icon={<Clock />} label="Horário" value={agendamento.horario} />
-              <DetailItem icon={<Hash />} label="Senha" value={`#${agendamento.senha}`} />
-              <DetailItem icon={<Phone />} label="Telefone" value={agendamento.telefone} />
-              <DetailItem icon={<Mail />} label="Email" value={agendamento.email} />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function DetailItem({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
-      <div className="text-slate-400 [&>svg]:w-4 [&>svg]:h-4">{icon}</div>
-      <div>
-        <p className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">{label}</p>
-        <p className="text-sm font-semibold text-slate-700 truncate">{value}</p>
-      </div>
-    </div>
-  )
-}
-
-function EmptyState({ search }: { search: string }) {
-  return (
-    <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center">
-      <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-        <CalendarDays className="w-8 h-8 text-slate-400" />
-      </div>
-      <h3 className="text-lg font-bold text-slate-800 mb-2">Nenhum agendamento encontrado</h3>
-      <p className="text-slate-500 text-sm max-w-sm mx-auto">
-        {search 
-          ? `Não encontramos resultados para "${search}". Tente outro termo.`
-          : 'Não há agendamentos para esta data. Selecione outra data ou visualize todos os registros.'
-        }
-      </p>
-    </div>
-  )
-}
-
-function ConfiguracoesTab({ config, novoHorario, setNovoHorario, adicionarHorario, removerHorario, novoFeriado, setNovoFeriado, adicionarFeriado, removerFeriado, novaCategoria, setNovaCategoria, setConfig }: {
-  config: typeof mockConfig
-  novoHorario: string
-  setNovoHorario: (v: string) => void
-  adicionarHorario: (h: string) => void
-  removerHorario: (h: string) => void
-  novoFeriado: string
-  setNovoFeriado: (v: string) => void
-  adicionarFeriado: (f: string) => void
-  removerFeriado: (f: string) => void
-  novaCategoria: { nome: string; idadeMin: string; idadeMax: string }
-  setNovaCategoria: React.Dispatch<React.SetStateAction<{ nome: string; idadeMin: string; idadeMax: string }>>
-  setConfig: React.Dispatch<React.SetStateAction<typeof mockConfig>>
-}) {
-  return (
-    <div className="space-y-8">
-      {/* Header */}
-      <header>
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-2 h-8 bg-gradient-to-b from-violet-500 to-purple-400 rounded-full" />
-          <h1 className="text-3xl lg:text-4xl font-bold text-slate-900 tracking-tight">Configurações</h1>
-        </div>
-        <p className="text-slate-500 ml-5">Personalize horários, feriados e parâmetros do sistema</p>
-      </header>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Horários */}
-        <ConfigCard 
-          icon={<Clock />}
-          iconBg="bg-blue-500"
-          title="Horários de Atendimento"
-          description="Defina os horários disponíveis para agendamento"
-        >
-          <div className="flex gap-3 mb-5">
-            <input
-              type="time"
-              value={novoHorario}
-              onChange={(e) => setNovoHorario(e.target.value)}
-              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-700 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all"
-            />
-            <button
-              onClick={() => {
-                if (novoHorario) {
-                  adicionarHorario(novoHorario)
-                  setNovoHorario('')
-                }
-              }}
-              className="bg-blue-500 text-white px-4 py-3 rounded-xl hover:bg-blue-600 active:scale-95 transition-all shadow-lg shadow-blue-500/25"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {config.horariosAtendimento.map((horario) => (
-              <span key={horario} className="inline-flex items-center px-4 py-2 rounded-xl text-sm font-semibold bg-blue-50 border border-blue-100 text-blue-700 group hover:border-blue-200 transition-colors">
-                {horario}
-                <button
-                  onClick={() => removerHorario(horario)}
-                  className="ml-2 text-blue-400 hover:text-red-500 transition-colors p-0.5 rounded-full hover:bg-red-50"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </span>
-            ))}
-          </div>
-        </ConfigCard>
-
-        {/* Feriados */}
-        <ConfigCard 
-          icon={<CalendarIcon />}
-          iconBg="bg-red-500"
-          title="Dias Bloqueados"
-          description="Adicione feriados ou dias sem expediente"
-        >
-          <div className="flex gap-3 mb-5">
-            <input
-              type="date"
-              value={novoFeriado}
-              onChange={(e) => setNovoFeriado(e.target.value)}
-              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-700 focus:ring-2 focus:ring-red-500/20 focus:border-red-400 outline-none transition-all"
-            />
-            <button
-              onClick={() => {
-                if (novoFeriado) {
-                  adicionarFeriado(novoFeriado)
-                  setNovoFeriado('')
-                }
-              }}
-              className="bg-red-500 text-white px-4 py-3 rounded-xl hover:bg-red-600 active:scale-95 transition-all shadow-lg shadow-red-500/25"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="space-y-2 max-h-[240px] overflow-y-auto">
-            {config.feriados.map((feriado) => (
-              <div key={feriado} className="flex justify-between items-center p-3 bg-red-50 border border-red-100 rounded-xl group hover:border-red-200 transition-all">
-                <span className="text-slate-700 font-medium flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-red-400" />
-                  {new Date(feriado + 'T12:00:00').toLocaleDateString('pt-BR', {
-                    weekday: 'short',
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric'
-                  })}
-                </span>
-                <button
-                  onClick={() => removerFeriado(feriado)}
-                  className="text-slate-400 hover:text-red-500 transition-colors p-2 hover:bg-red-100 rounded-lg opacity-0 group-hover:opacity-100"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </ConfigCard>
-
-        {/* Parâmetros Gerais */}
-        <ConfigCard 
-          icon={<Shield />}
-          iconBg="bg-violet-500"
-          title="Parâmetros Gerais"
-          description="Configurações globais do sistema"
-        >
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-3">
-              Limite de Vagas por Dia
-            </label>
-            <div className="flex items-center gap-4">
-              <input
-                type="number"
-                value={config.limiteVagasPorDia}
-                onChange={(e) => setConfig(prev => ({ ...prev, limiteVagasPorDia: Number(e.target.value) }))}
-                className="w-28 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-2xl font-bold text-slate-800 focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 outline-none transition-all text-center"
-              />
-              <span className="text-slate-500 text-sm">vagas disponíveis por dia</span>
-            </div>
-          </div>
-        </ConfigCard>
-
-        {/* Categorias */}
-        <ConfigCard 
-          icon={<Tags />}
-          iconBg="bg-indigo-500"
-          title="Categorias de Público"
-          description="Defina faixas etárias e grupos prioritários"
-        >
-          <div className="space-y-3 mb-5">
-            <input
-              type="text"
-              placeholder="Nome da categoria (ex: Idoso)"
-              value={novaCategoria.nome}
-              onChange={(e) => setNovaCategoria(prev => ({ ...prev, nome: e.target.value }))}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
-            />
-            <div className="flex gap-3">
-              <input
-                type="number"
-                placeholder="Idade mín"
-                value={novaCategoria.idadeMin}
-                onChange={(e) => setNovaCategoria(prev => ({ ...prev, idadeMin: e.target.value }))}
-                className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
-              />
-              <input
-                type="number"
-                placeholder="Idade máx"
-                value={novaCategoria.idadeMax}
-                onChange={(e) => setNovaCategoria(prev => ({ ...prev, idadeMax: e.target.value }))}
-                className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
-              />
-              <button
-                onClick={() => {
-                  if (novaCategoria.nome && novaCategoria.idadeMin && novaCategoria.idadeMax) {
-                    setConfig(prev => ({
-                      ...prev,
-                      categorias: [...prev.categorias, {
-                        id: `cat_${Date.now()}`,
-                        nome: novaCategoria.nome,
-                        idadeMin: Number(novaCategoria.idadeMin),
-                        idadeMax: Number(novaCategoria.idadeMax)
-                      }]
-                    }))
-                    setNovaCategoria({ nome: '', idadeMin: '', idadeMax: '' })
-                  }
-                }}
-                className="bg-indigo-500 text-white px-4 py-3 rounded-xl hover:bg-indigo-600 transition-all shadow-lg shadow-indigo-500/25"
-              >
-                <Plus className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-          
-          <div className="space-y-2">
-            {config.categorias.map((cat) => (
-              <div key={cat.id} className="flex justify-between items-center p-3 bg-indigo-50 border border-indigo-100 rounded-xl group hover:border-indigo-200 transition-all">
-                <div>
-                  <p className="font-semibold text-slate-700">{cat.nome}</p>
-                  <p className="text-xs text-slate-500">{cat.idadeMin} a {cat.idadeMax} anos</p>
-                </div>
-                <button
-                  onClick={() => setConfig(prev => ({
-                    ...prev,
-                    categorias: prev.categorias.filter(c => c.id !== cat.id)
-                  }))}
-                  className="text-slate-400 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </ConfigCard>
-      </div>
-    </div>
-  )
-}
-
-function ConfigCard({ icon, iconBg, title, description, children }: {
-  icon: React.ReactNode
-  iconBg: string
-  title: string
-  description: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-300">
-      <div className="flex items-center gap-3 mb-6">
-        <div className={cn("p-3 rounded-2xl text-white shadow-lg [&>svg]:w-5 [&>svg]:h-5", iconBg)}>
-          {icon}
-        </div>
-        <div>
-          <h3 className="text-lg font-bold text-slate-800">{title}</h3>
-          <p className="text-sm text-slate-400">{description}</p>
-        </div>
-      </div>
-      {children}
-    </div>
-  )
-}
+  );
+};

@@ -5,7 +5,7 @@ import { Confirmacao } from './pages/Confirmacao';
 import { Sucesso } from './pages/Sucesso';
 import { Verificacao } from './pages/Verificacao';
 import { Login } from './pages/Admin/Login';
-import Dashboard from './pages/Admin/Dashboard';
+import { Dashboard } from './pages/Admin/Dashboard';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 // Componente para proteger rotas privadas
