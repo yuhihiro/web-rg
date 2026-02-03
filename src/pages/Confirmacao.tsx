@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Header } from '../components/Layout/Header';
 import { Footer } from '../components/Layout/Footer';
@@ -7,6 +7,7 @@ import { useAgendamentos } from '../hooks/useAgendamentos';
 import type { Agendamento } from '../types';
 import { TransicaoPagina } from '../components/Animacoes/TransicaoPagina';
 import { useConfig } from '../hooks/useConfig';
+import { AlertCircle, X } from 'lucide-react';
 
 export const Confirmacao: React.FC = () => {
   const location = useLocation();
@@ -14,6 +15,7 @@ export const Confirmacao: React.FC = () => {
   const [searchParams] = useSearchParams();
   const { salvarAgendamento, gerarProximaSenha, verificarAgendamentoExistente, contarAgendamentosPorHorario } = useAgendamentos();
   const { config } = useConfig();
+  const [erro, setErro] = useState<string | null>(null);
   
   // Tenta pegar do state (legado) ou do query param (novo)
   const dataSelecionada = location.state?.dataSelecionada || searchParams.get('data');
@@ -28,13 +30,13 @@ export const Confirmacao: React.FC = () => {
     try {
       // Verifica se já existe agendamento para este CPF
       if (verificarAgendamentoExistente(dados.cpf)) {
-        alert('Já existe um agendamento realizado para este CPF.');
+        setErro('Já existe um agendamento realizado para este CPF. Por favor, verifique seus dados ou entre em contato com o suporte.');
         return;
       }
 
       if (!horarioSelecionado) {
-        alert('Horário não selecionado. Por favor, inicie o agendamento novamente.');
-        navigate('/');
+        setErro('Horário não selecionado. Por favor, inicie o agendamento novamente.');
+        setTimeout(() => navigate('/'), 3000);
         return;
       }
       
@@ -42,8 +44,8 @@ export const Confirmacao: React.FC = () => {
       if (capacidade !== undefined) {
         const ocupacao = contarAgendamentosPorHorario(dataSelecionada, horarioSelecionado);
         if (ocupacao >= capacidade) {
-          alert('Este horário está lotado. Por favor, escolha outro horário disponível.');
-          navigate('/');
+          setErro('Este horário acabou de ser preenchido. Por favor, escolha outro horário disponível.');
+          setTimeout(() => navigate('/'), 3000);
           return;
         }
       }
@@ -95,7 +97,7 @@ export const Confirmacao: React.FC = () => {
       });
     } catch (error) {
       console.error('Erro ao salvar agendamento:', error);
-      alert('Erro ao processar agendamento. Tente novamente.');
+      setErro('Ocorreu um erro ao processar seu agendamento. Por favor, tente novamente.');
     }
   };
 
@@ -142,6 +144,36 @@ export const Confirmacao: React.FC = () => {
       </main>
       
       <Footer />
+
+      {/* Modal de Erro UI/UX */}
+      {erro && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 relative animate-scaleIn transform transition-all">
+            <button 
+              onClick={() => setErro(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors p-1 hover:bg-slate-100 rounded-full"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mb-4 ring-4 ring-red-50/50">
+                <AlertCircle className="w-8 h-8 text-red-500" />
+              </div>
+              
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Atenção!</h3>
+              <p className="text-slate-600 mb-6 leading-relaxed">{erro}</p>
+              
+              <button
+                onClick={() => setErro(null)}
+                className="w-full bg-red-500 text-white py-3.5 rounded-xl font-bold hover:bg-red-600 transition-all shadow-lg shadow-red-200 active:scale-[0.98]"
+              >
+                Entendi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
