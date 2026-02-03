@@ -26,12 +26,22 @@ export const useAgendamentos = () => {
 
   useEffect(() => {
     // Escutar agendamentos em tempo real
-    const q = query(collection(db, AGENDAMENTOS_COLLECTION), orderBy('dataAgendamento'), orderBy('horario'));
+    // Removido orderBy composto para evitar erro de índice inexistente no Firestore
+    const q = query(collection(db, AGENDAMENTOS_COLLECTION));
     const unsubscribeAgendamentos = onSnapshot(q, (snapshot) => {
       const dados = snapshot.docs.map(doc => ({
         ...doc.data(),
         id: doc.id
       })) as Agendamento[];
+      
+      // Ordenação no cliente (mais seguro para evitar erros de índice)
+      dados.sort((a, b) => {
+        if (a.dataAgendamento !== b.dataAgendamento) {
+          return a.dataAgendamento.localeCompare(b.dataAgendamento);
+        }
+        return a.horario.localeCompare(b.horario);
+      });
+
       setAgendamentos(dados);
       setLoading(false);
     }, (error) => {

@@ -10,14 +10,15 @@ export const useCalendario = () => {
 
   useEffect(() => {
     atualizarDiasDisponiveis();
-  }, [mesAtual, config.feriados, config.regrasDatas]);
+  }, [mesAtual, config.feriados, config.regrasDatas, config.horariosAtendimento]);
 
   const atualizarDiasDisponiveis = () => {
     const dias = obterDiasDisponiveis(
       mesAtual,
       CONFIG.DIAS_ANTECEDENCIA_MINIMA,
       CONFIG.DIAS_ANTECEDENCIA_MAXIMA,
-      config.feriados
+      config.feriados,
+      config.horariosAtendimento
     );
     const regras = Object.keys(config.regrasDatas || {});
     if (regras.length > 0) {

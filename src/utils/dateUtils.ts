@@ -22,8 +22,14 @@ export const obterDiasDisponiveis = (
   mesAtual: Date, 
   diasAntecedenciaMinima: number, 
   diasAntecedenciaMaxima: number,
-  feriados: string[] = [...CONFIG.FERIADOS]
+  feriados: string[] = [...CONFIG.FERIADOS],
+  horariosAtendimento?: string[]
 ): string[] => {
+  // Se horários de atendimento forem passados e estiverem vazios, nenhum dia está disponível
+  if (horariosAtendimento !== undefined && horariosAtendimento.length === 0) {
+    return [];
+  }
+
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
   

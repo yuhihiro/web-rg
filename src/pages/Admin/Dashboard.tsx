@@ -33,8 +33,9 @@ export const Dashboard: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   
   // Agendamentos State
-  const { obterAgendamentosPorData, toggleCompareceu } = useAgendamentos();
+  const { obterAgendamentosPorData, toggleCompareceu, agendamentos } = useAgendamentos();
   const [dataFiltro, setDataFiltro] = useState(new Date().toISOString().split('T')[0]);
+  const [mostrarTodos, setMostrarTodos] = useState(false);
   const [termoBusca, setTermoBusca] = useState('');
 
   // Config State
@@ -59,11 +60,19 @@ export const Dashboard: React.FC = () => {
   const [novaRegraData, setNovaRegraData] = useState({ data: '', categoriaId: '' });
 
   // Derived State
-  const agendamentosDoDia = obterAgendamentosPorData(dataFiltro);
+  const agendamentosDoDia = mostrarTodos ? agendamentos : obterAgendamentosPorData(dataFiltro);
   const agendamentosFiltrados = agendamentosDoDia.filter(ag => 
     ag.nome.toLowerCase().includes(termoBusca.toLowerCase()) ||
     ag.cpf.includes(termoBusca)
-  ).sort((a, b) => a.horario.localeCompare(b.horario));
+  ).sort((a, b) => {
+    if (mostrarTodos) {
+      // Se mostrar todos, ordena por data primeiro, depois horário
+      const dataA = a.dataAgendamento.split('/').reverse().join('-'); // assumindo formato YYYY-MM-DD
+      const dataB = b.dataAgendamento.split('/').reverse().join('-');
+      if (a.dataAgendamento !== b.dataAgendamento) return a.dataAgendamento.localeCompare(b.dataAgendamento);
+    }
+    return a.horario.localeCompare(b.horario);
+  });
 
   const compareceram = agendamentosDoDia.filter(ag => ag.compareceu).length;
 
@@ -178,13 +187,29 @@ export const Dashboard: React.FC = () => {
                     <CalendarIcon className="w-5 h-5 text-blue-600" />
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-xs text-slate-500 font-semibold uppercase">Data de Visualização</span>
-                    <input
-                      type="date"
-                      value={dataFiltro}
-                      onChange={(e) => setDataFiltro(e.target.value)}
-                      className="outline-none text-slate-700 font-medium bg-transparent cursor-pointer"
-                    />
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs text-slate-500 font-semibold uppercase">Data de Visualização</span>
+                      <button 
+                        onClick={() => setMostrarTodos(!mostrarTodos)}
+                        className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
+                          mostrarTodos 
+                            ? 'bg-blue-600 text-white' 
+                            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                        }`}
+                      >
+                        {mostrarTodos ? 'Ver Filtro' : 'Ver Todos'}
+                      </button>
+                    </div>
+                    {!mostrarTodos ? (
+                      <input
+                        type="date"
+                        value={dataFiltro}
+                        onChange={(e) => setDataFiltro(e.target.value)}
+                        className="outline-none text-slate-700 font-medium bg-transparent cursor-pointer"
+                      />
+                    ) : (
+                      <span className="text-slate-700 font-medium text-sm py-0.5">Exibindo todos os registros</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -269,6 +294,9 @@ export const Dashboard: React.FC = () => {
                   <table className="min-w-full divide-y divide-slate-100">
                     <thead className="bg-slate-50/50">
                       <tr>
+                        {mostrarTodos && (
+                          <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Data</th>
+                        )}
                         <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Horário</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Dados do Cidadão</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Contato</th>
@@ -279,7 +307,7 @@ export const Dashboard: React.FC = () => {
                     <tbody className="bg-white divide-y divide-slate-100">
                       {agendamentosFiltrados.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="px-6 py-12 text-center">
+                          <td colSpan={mostrarTodos ? 6 : 5} className="px-6 py-12 text-center">
                             <div className="flex flex-col items-center justify-center text-slate-400">
                               <Search className="w-12 h-12 mb-3 opacity-20" />
                               <p className="text-lg font-medium">Nenhum agendamento encontrado</p>
@@ -290,6 +318,13 @@ export const Dashboard: React.FC = () => {
                       ) : (
                         agendamentosFiltrados.map((ag) => (
                           <tr key={ag.id} className={`transition-colors ${ag.compareceu ? 'bg-emerald-50/30' : 'hover:bg-slate-50'}`}>
+                            {mostrarTodos && (
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm font-medium text-slate-700">
+                                  {new Date(ag.dataAgendamento + 'T12:00:00').toLocaleDateString('pt-BR')}
+                                </span>
+                              </td>
+                            )}
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-bold">
                                 {ag.horario}
