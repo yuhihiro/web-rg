@@ -31,6 +31,7 @@ import {
   ArrowDown
 } from 'lucide-react';
 import { Agendamento } from '../../types';
+import { toLocalISOString } from '../../utils/dateUtils';
 
 type Tab = 'agendamentos' | 'configuracoes';
 
@@ -40,8 +41,9 @@ export const Dashboard: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   
   // Agendamentos State
-  const { obterAgendamentosPorData, toggleCompareceu, agendamentos, deletarAgendamento, atualizarAgendamento } = useAgendamentos();
-  const [dataFiltro, setDataFiltro] = useState(new Date().toISOString().split('T')[0]);
+  // Carregar TODO o histórico para o admin (apenasFuturos = false)
+  const { obterAgendamentosPorData, toggleCompareceu, agendamentos, deletarAgendamento, atualizarAgendamento } = useAgendamentos(false);
+  const [dataFiltro, setDataFiltro] = useState(toLocalISOString(new Date()));
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [termoBusca, setTermoBusca] = useState('');
   const [ordenacao, setOrdenacao] = useState<{ campo: 'horario' | 'nome', direcao: 'asc' | 'desc' }>({ campo: 'horario', direcao: 'asc' });

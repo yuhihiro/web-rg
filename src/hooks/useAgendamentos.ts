@@ -12,22 +12,32 @@ import {
   orderBy, 
   runTransaction,
   setDoc,
-  getDoc
+  getDoc,
+  where
 } from 'firebase/firestore';
+import { toLocalISOString } from '../utils/dateUtils';
 
 const AGENDAMENTOS_COLLECTION = 'agendamentos';
 const COUNTERS_COLLECTION = 'counters';
 const COUNTER_DOC_ID = 'geral';
 
-export const useAgendamentos = () => {
+export const useAgendamentos = (apenasFuturos: boolean = true) => {
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
   const [senhaAtual, setSenhaAtual] = useState<number>(1);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // Escutar agendamentos em tempo real
-    // Removido orderBy composto para evitar erro de índice inexistente no Firestore
-    const q = query(collection(db, AGENDAMENTOS_COLLECTION));
+    // Otimização: Por padrão, carregar apenas agendamentos de hoje em diante para economizar leituras
+    let q;
+    
+    if (apenasFuturos) {
+      const hoje = toLocalISOString(new Date());
+      q = query(collection(db, AGENDAMENTOS_COLLECTION), where('dataAgendamento', '>=', hoje));
+    } else {
+      q = query(collection(db, AGENDAMENTOS_COLLECTION));
+    }
+
     const unsubscribeAgendamentos = onSnapshot(q, (snapshot) => {
       const dados = snapshot.docs.map(doc => ({
         ...doc.data(),
@@ -64,7 +74,7 @@ export const useAgendamentos = () => {
       unsubscribeAgendamentos();
       unsubscribeCounter();
     };
-  }, []);
+  }, [apenasFuturos]);
 
   const salvarAgendamento = async (agendamento: Agendamento) => {
     try {
